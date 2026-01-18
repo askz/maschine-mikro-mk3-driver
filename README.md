@@ -154,6 +154,7 @@ Then in Bitwig:
 2. Select **Native Instruments → Maschine Mikro MK3 (Linux)**
 3. Set Input to **Virtual Raw MIDI/1**
 4. Set Output to **Virtual Raw MIDI/2**
+5. (Optional) Click on the controller name to customize pad LED feedback settings
 
 #### Optional: rename "Virtual Raw MIDI" to "Maschine Mikro MK3"
 
@@ -188,6 +189,28 @@ sudo modprobe snd-virmidi midi_devs=2 id="Maschine Mikro MK3"
 | Erase | Delete | Remove |
 | Plugin | Next device | Previous device |
 | Slider | Track volume | - |
+
+### Pad Playback Feedback (Bitwig 6+)
+
+The controller script includes visual feedback on pads during clip/sequence playback. This feature uses the `playingNotes()` API introduced in Bitwig Studio 6 beta. The script will work on older versions but without playback feedback.
+
+**Example use case:** When you have a drum loop playing in a clip, you'll see the pads light up in sync with the beat, showing exactly which drums are being triggered. This helps you visualize the rhythm and jam along with live pads.
+
+#### Customizable Settings
+
+Go to **Settings → Controllers → Maschine Mikro MK3 (Linux)** to customize:
+
+| Setting | Options | Description |
+|---------|---------|-------------|
+| **Playback Feedback** | Enabled / Disabled | Show visual feedback for notes playing from clips |
+| **Manual Hit Feedback** | Enabled / Disabled | Show visual feedback when you press pads manually |
+| **Playback Color Mode** | Track Color / Fixed Color | Use track color or a fixed color for playback |
+| **Fixed Playback Color** | Red, Orange, Yellow, Green, Cyan, Blue, Purple, Magenta, White | Color to use when Fixed Color mode is selected |
+| **Manual Hit Color** | Red, Orange, Yellow, Green, Cyan, Blue, Purple, Magenta, White | Color for manually pressed pads (default: Blue) |
+
+**Track Color Mode:** Each track has its own color in Bitwig, making it easy to identify which track/drums are active.
+
+**Fixed Color Mode:** All playback uses the same color regardless of track - useful if you prefer consistency.
 
 ## Goal
 
