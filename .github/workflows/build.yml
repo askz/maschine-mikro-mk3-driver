@@ -17,6 +17,80 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Generate release notes
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        # Get current tag
+        CURRENT_TAG=${GITHUB_REF#refs/tags/}
+        
+        # Get previous tag
+        PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${CURRENT_TAG}$" | head -n 1)
+        
+        # Generate changelog
+        echo "# Release ${CURRENT_TAG}" > RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        
+        if [ -z "$PREVIOUS_TAG" ]; then
+          echo "## Changes" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          git log --pretty=format:"- %s (%h)" >> RELEASE_NOTES.md
+        else
+          echo "## Changes since ${PREVIOUS_TAG}" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          
+          # Parse commits by type
+          FEATURES=$(git log ${PREVIOUS_TAG}..${CURRENT_TAG} --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" || true)
+          FIXES=$(git log ${PREVIOUS_TAG}..${CURRENT_TAG} --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" || true)
+          DOCS=$(git log ${PREVIOUS_TAG}..${CURRENT_TAG} --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" || true)
+          REFACTOR=$(git log ${PREVIOUS_TAG}..${CURRENT_TAG} --pretty=format:"%s" | grep -E "^refactor(\(.*\))?:" || true)
+          CHORE=$(git log ${PREVIOUS_TAG}..${CURRENT_TAG} --pretty=format:"%s" | grep -E "^chore(\(.*\))?:" || true)
+          OTHER=$(git log ${PREVIOUS_TAG}..${CURRENT_TAG} --pretty=format:"%s" | grep -vE "^(feat|fix|docs|refactor|chore)(\(.*\))?:" || true)
+          
+          if [ -n "$FEATURES" ]; then
+            echo "### ✨ Features" >> RELEASE_NOTES.md
+            echo "$FEATURES" | sed 's/^feat/- /' | sed 's/^- (\(.*\)): /- **\1**: /' | sed 's/^- : /- /' >> RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+          fi
+          
+          if [ -n "$FIXES" ]; then
+            echo "### 🐛 Bug Fixes" >> RELEASE_NOTES.md
+            echo "$FIXES" | sed 's/^fix/- /' | sed 's/^- (\(.*\)): /- **\1**: /' | sed 's/^- : /- /' >> RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+          fi
+          
+          if [ -n "$DOCS" ]; then
+            echo "### 📚 Documentation" >> RELEASE_NOTES.md
+            echo "$DOCS" | sed 's/^docs/- /' | sed 's/^- (\(.*\)): /- **\1**: /' | sed 's/^- : /- /' >> RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+          fi
+          
+          if [ -n "$REFACTOR" ]; then
+            echo "### ♻️ Refactoring" >> RELEASE_NOTES.md
+            echo "$REFACTOR" | sed 's/^refactor/- /' | sed 's/^- (\(.*\)): /- **\1**: /' | sed 's/^- : /- /' >> RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+          fi
+          
+          if [ -n "$CHORE" ]; then
+            echo "### 🔧 Chores" >> RELEASE_NOTES.md
+            echo "$CHORE" | sed 's/^chore/- /' | sed 's/^- (\(.*\)): /- **\1**: /' | sed 's/^- : /- /' >> RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+          fi
+          
+          if [ -n "$OTHER" ]; then
+            echo "### Other Changes" >> RELEASE_NOTES.md
+            echo "$OTHER" | sed 's/^/- /' >> RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+          fi
+        fi
+        
+        echo "## Installation" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "Download the \`maschine-mikro-mk3-driver\` binary for Linux x86_64 below." >> RELEASE_NOTES.md
+        
+        cat RELEASE_NOTES.md
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -74,7 +148,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: artifacts/maschine-mikro-mk3-driver
-        generate_release_notes: true
+        body_path: RELEASE_NOTES.md
         draft: false
         prerelease: false
       env:
