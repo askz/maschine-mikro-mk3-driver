@@ -160,6 +160,10 @@ fn main() -> HidResult<()> {
     // Shared state for lights (needed for MIDI input callback)
     let lights = Arc::new(Mutex::new(Lights::new()));
     let lights_dirty = Arc::new(AtomicBool::new(false));
+    
+    // Shared state for screen (needed for MIDI input callback - SysEx messages)
+    let screen = Arc::new(Mutex::new(Screen::new()));
+    let screen_dirty = Arc::new(AtomicBool::new(false));
 
     // Create MIDI input port
     let midi_input = MidiInput::new(&format!("{} In", settings.client_name))
@@ -169,6 +173,8 @@ fn main() -> HidResult<()> {
         &settings,
         Arc::clone(&lights),
         Arc::clone(&lights_dirty),
+        Arc::clone(&screen),
+        Arc::clone(&screen_dirty),
     );
 
     // Now that the virtual MIDI ports exist, optionally wire them to virmidi (what Bitwig enumerates).
@@ -185,15 +191,14 @@ fn main() -> HidResult<()> {
 
     device.set_blocking_mode(false)?;
 
-    let mut screen = Screen::new();
-
-    // Run self test with a temporary lock on lights
+    // Run self test with a temporary lock on lights and screen
     {
         let mut lights_guard = lights.lock().unwrap();
-        self_test(&device, &mut screen, &mut lights_guard)?;
+        let mut screen_guard = screen.lock().unwrap();
+        self_test(&device, &mut screen_guard, &mut lights_guard)?;
     }
 
-    main_loop(&device, &mut screen, lights, lights_dirty, &mut port, &settings)?;
+    main_loop(&device, lights, lights_dirty, screen, screen_dirty, &mut port, &settings)?;
 
     Ok(())
 }
@@ -419,12 +424,21 @@ fn velocity_to_color(velocity: u8) -> PadColors {
     }
 }
 
+// SysEx protocol constants
+// Format: F0 00 21 09 <cmd> <data...> F7
+// Commands: 01 = Screen Text, 02 = Screen Clear
+const SYSEX_MANUFACTURER: [u8; 3] = [0x00, 0x21, 0x09];
+const SYSEX_CMD_TEXT: u8 = 0x01;
+const SYSEX_CMD_CLEAR: u8 = 0x02;
+
 /// Creates the MIDI input port with a callback that processes incoming MIDI messages
 fn create_midi_input(
     midi_input: MidiInput,
     settings: &Settings,
     lights: Arc<Mutex<Lights>>,
     lights_dirty: Arc<AtomicBool>,
+    screen: Arc<Mutex<Screen>>,
+    screen_dirty: Arc<AtomicBool>,
 ) -> MidiInputConnection<Vec<u8>> {
     // Clone notemaps for the callback (it needs to be 'static)
     let notemaps = settings.notemaps.clone();
@@ -436,7 +450,13 @@ fn create_midi_input(
         .create_virtual(
             &settings.port_name_in,
             move |_timestamp, message, _data| {
-                // Parse incoming MIDI message
+                // Handle SysEx messages (variable length, starts with 0xF0)
+                if !message.is_empty() && message[0] == 0xF0 {
+                    handle_sysex(message, &screen, &screen_dirty);
+                    return;
+                }
+                
+                // Parse incoming MIDI message (regular 3-byte messages)
                 if message.len() < 3 {
                     return;
                 }
@@ -514,11 +534,72 @@ fn create_midi_input(
         .expect("Couldn't create virtual input port")
 }
 
+/// Handle incoming SysEx messages for screen control
+fn handle_sysex(message: &[u8], screen: &Arc<Mutex<Screen>>, screen_dirty: &Arc<AtomicBool>) {
+    // Minimum SysEx: F0 <3 bytes mfr> <cmd> F7 = 6 bytes
+    if message.len() < 6 {
+        return;
+    }
+    
+    // Check manufacturer ID
+    if message[1..4] != SYSEX_MANUFACTURER {
+        return;
+    }
+    
+    let cmd = message[4];
+    
+    match cmd {
+        SYSEX_CMD_TEXT => {
+            // Screen text update: F0 00 21 09 01 <text bytes> F7
+            // Extract text bytes (skip header, exclude F7 at end)
+            let text_bytes = &message[5..message.len().saturating_sub(1)];
+            let text = String::from_utf8_lossy(text_bytes);
+            
+            let mut screen_guard = screen.lock().unwrap();
+            render_screen_text(&mut screen_guard, &text);
+            screen_dirty.store(true, Ordering::SeqCst);
+            
+            println!("Screen: {}", text);
+        }
+        SYSEX_CMD_CLEAR => {
+            // Screen clear: F0 00 21 09 02 F7
+            let mut screen_guard = screen.lock().unwrap();
+            screen_guard.reset();
+            screen_dirty.store(true, Ordering::SeqCst);
+            
+            println!("Screen: cleared");
+        }
+        _ => {
+            // Unknown command
+        }
+    }
+}
+
+/// Render text to the screen buffer (centered)
+fn render_screen_text(screen: &mut Screen, text: &str) {
+    const SCREEN_WIDTH: usize = 128;
+    const CHAR_WIDTH: usize = 8;
+    const Y_POSITION: usize = 12;
+    const SCALE: usize = 1;
+    
+    screen.reset();
+    
+    let text_width = text.chars().count() * CHAR_WIDTH * SCALE;
+    let x_start = if text_width < SCREEN_WIDTH {
+        (SCREEN_WIDTH - text_width) / 2
+    } else {
+        0
+    };
+    
+    Font::write_str(screen, Y_POSITION, x_start, text, SCALE);
+}
+
 fn main_loop(
     device: &HidDevice,
-    _screen: &mut Screen,
     lights: Arc<Mutex<Lights>>,
     lights_dirty: Arc<AtomicBool>,
+    screen: Arc<Mutex<Screen>>,
+    screen_dirty: Arc<AtomicBool>,
     port: &mut MidiOutputConnection,
     settings: &Settings,
 ) -> HidResult<()> {
@@ -561,14 +642,19 @@ fn main_loop(
     loop {
         let size = device.read_timeout(&mut buf, 1)?;
 
-        // Check if MIDI input callback flagged lights as dirty
-        let midi_changed = lights_dirty.swap(false, Ordering::SeqCst);
+        // Check if MIDI input callback flagged lights or screen as dirty
+        let lights_changed = lights_dirty.swap(false, Ordering::SeqCst);
+        let screen_changed = screen_dirty.swap(false, Ordering::SeqCst);
 
         if size < 1 {
-            // No HID data, but still write lights if MIDI input changed them
-            if midi_changed {
+            // No HID data, but still write lights/screen if MIDI input changed them
+            if lights_changed {
                 let lights_guard = lights.lock().unwrap();
                 lights_guard.write(device)?;
+            }
+            if screen_changed {
+                let screen_guard = screen.lock().unwrap();
+                screen_guard.write(device)?;
             }
             continue;
         }
@@ -720,8 +806,14 @@ fn main_loop(
                 }
             }
         }
-        if changed_lights || midi_changed {
+        if changed_lights || lights_changed {
             lights_guard.write(device)?;
+        }
+        
+        // Write screen if changed by MIDI callback
+        if screen_changed {
+            let screen_guard = screen.lock().unwrap();
+            screen_guard.write(device)?;
         }
     }
 }
