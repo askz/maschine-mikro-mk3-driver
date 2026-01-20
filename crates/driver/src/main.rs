@@ -769,24 +769,10 @@ fn main_loop(
                 }
                 let pad_evt: PadEventType = num::FromPrimitive::from_u8(evt).unwrap();
 
-                let (_, prev_b) = lights_guard.get_pad(idx as usize);
-                let b = match pad_evt {
-                    PadEventType::NoteOn | PadEventType::PressOn => Brightness::Normal,
-                    PadEventType::NoteOff | PadEventType::PressOff => Brightness::Off,
-                    PadEventType::Aftertouch => {
-                        if val > 0 {
-                            Brightness::Normal
-                        } else {
-                            Brightness::Off
-                        }
-                    }
-                    #[allow(unreachable_patterns)]
-                    _ => prev_b,
-                };
-                if prev_b != b {
-                    lights_guard.set_pad(idx as usize, PadColors::Blue, b);
-                    changed_lights = true;
-                }
+                // REMOVED: Automatic blue LED feedback on pad touch
+                // This was conflicting with MIDI-based LED control from Bitwig
+                // Now LEDs are controlled exclusively via MIDI Note On/Off messages
+                // from the controller script, allowing proper step sequencer LED states
 
                 let note = settings.notemaps[idx as usize];
                 let mut velocity = (val >> 5) as u8;
