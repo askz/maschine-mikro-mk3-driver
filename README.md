@@ -68,11 +68,27 @@ What works:
  - Encoder (MIDI CC, relative mode)
  - Slider/Touch Strip (MIDI CC)
  - All LEDs (controllable via MIDI input)
- - Screen
+ - Screen (with DAW integration via SysEx)
+ - Mode System (Play, Step, Clip, Mixer)
+ - Note Repeat
+ - Fixed Velocity
+ - Step Sequencer
+ - Clip Launcher
+ - Mixer Controls
 
 So, basically everything, and even more than with the official driver.
 For example, it is now possible to turn unpressed pad LEDs completely off in the layout.
 Or it turns out that every button has 4 levels of brightness, not just Off/On as in the official MIDI Mode.
+
+### Screen Integration
+
+The OLED screen displays contextual information based on the current mode:
+- **Mode name** when switching modes
+- **Track name** in Play and Mixer modes
+- **Note name** when changing step sequencer note
+- **Feature status** when toggling Note Repeat or Fixed Velocity
+
+The screen is controlled via SysEx messages from the Bitwig controller script, allowing for real-time feedback without additional configuration.
 
 ## MIDI Mapping
 
@@ -165,30 +181,104 @@ sudo modprobe -r snd_virmidi snd_seq_virmidi
 sudo modprobe snd-virmidi midi_devs=2 id="Maschine Mikro MK3"
 ```
 
+### Mode System
+
+The controller supports four operational modes, each providing different functionality for the pads and other controls. The current mode is displayed on the OLED screen.
+
+| Mode | Button | Pad Function | Encoder Function |
+|------|--------|--------------|------------------|
+| **Play** | Keyboard | Play notes (normal) | Navigate tracks |
+| **Step** | Step | Toggle sequencer steps | Change step note |
+| **Clip** | Scene | Launch clips/scenes | Navigate scenes |
+| **Mixer** | Pattern | Track controls (select/mute/solo/arm) | Navigate tracks |
+
+**Switching Modes:**
+- Press **Pad Mode** to cycle through modes
+- Press **Keyboard**, **Step**, **Scene**, or **Pattern** to jump directly to that mode
+- Press **Shift + Pad Mode** to return to Play mode
+- Hold **Shift** + mode button for the original view toggle function
+
+### Note Repeat
+
+Press **Note Repeat** to enable auto-retriggering of held pad notes. While enabled, holding a pad will continuously retrigger that note at the selected interval.
+
+| Action | Function |
+|--------|----------|
+| Note Repeat | Toggle note repeat on/off |
+| Shift + Note Repeat | Cycle repeat rate (1/16 → 1/8 → 1/4) |
+
+### Fixed Velocity
+
+Press **Fixed Vel** to force all pad hits to use a fixed velocity (100 by default). This is useful for consistent drum programming or when you want uniform note levels.
+
+| Action | Function |
+|--------|----------|
+| Fixed Vel | Toggle fixed velocity on/off |
+| Shift + Fixed Vel | Show current fixed velocity value |
+
+### Step Sequencer Mode
+
+In Step mode, the 16 pads represent 16 steps in a drum sequencer pattern:
+
+- **Press a pad** to toggle that step on/off
+- **Rotate encoder** to change the note being sequenced (C1 to G9)
+- **Press Erase** to clear all steps
+- **Yellow pads** = steps with notes
+- **White pad** = current playhead position
+- **Off pads** = empty steps
+
+The step sequencer edits the cursor clip in your current track.
+
+### Mixer Mode
+
+In Mixer mode, pads control the first 4 tracks in a grid layout:
+
+| Row | Function | Colors |
+|-----|----------|--------|
+| Top (1-4) | Select track | Blue |
+| Row 2 (5-8) | Toggle mute | Orange |
+| Row 3 (9-12) | Toggle solo | Yellow |
+| Bottom (13-16) | Toggle arm | Red |
+
+### Clip Launcher Mode
+
+In Clip mode, pads trigger clips and scenes:
+
+| Row | Function |
+|-----|----------|
+| Top row (1-4) | Launch scenes 1-4 |
+| Other rows | Launch track clips |
+
 ### Button Functions in Bitwig
 
 | Button | Function | Shift + Button |
 |--------|----------|----------------|
 | Play | Play/Pause | Return to arrangement |
-| Stop | Stop | - |
+| Stop | Stop | Reset automation |
 | Rec | Toggle record | Toggle overdub |
 | Restart | Jump to start | Toggle loop |
 | Tap | Tap tempo | Toggle metronome |
 | Left | Rewind | Previous track |
 | Right | Fast forward | Next track |
-| Browse | Open/close browser | - |
-| Encoder | Navigate tracks | Navigate tempo |
-| Encoder (in browser) | Browse presets | - |
-| Encoder Press | Confirm/commit | - |
+| Browse | Open/close browser | Insert device after |
+| Encoder | Mode-specific (see above) | Navigate tempo |
+| Encoder Press | Select in editor | Select in mixer |
 | Solo | Toggle solo | - |
 | Mute | Toggle mute | - |
 | Sampling | Toggle arm | - |
 | Volume | Undo | Redo |
-| Follow | Toggle follow | Zoom to fit |
+| Follow | Zoom to selection | Zoom to fit |
 | Duplicate | Duplicate | Duplicate object |
-| Erase | Delete | Remove |
+| Erase | Delete (or clear steps in Step mode) | Cut |
 | Plugin | Next device | Previous device |
 | Slider | Track volume | - |
+| Note Repeat | Toggle note repeat | Cycle repeat rate |
+| Fixed Vel | Toggle fixed velocity | Show velocity value |
+| Pad Mode | Cycle modes | Return to Play mode |
+| Keyboard | Play mode | Toggle note editor |
+| Step | Step mode | Toggle automation editor |
+| Scene | Clip mode | Toggle mixer |
+| Pattern | Mixer mode | Return to arrangement |
 
 ### Pad Playback Feedback (Bitwig 6+)
 
@@ -214,6 +304,12 @@ Go to **Settings → Controllers → Maschine Mikro MK3 (Linux)** to customize:
 
 ## Goal
 
-The current goal is to provide a complete MIDI implementation for the Maschine Mikro MK3 on Linux, including full DAW integration with Bitwig Studio.
+This project provides a complete MIDI implementation for the Maschine Mikro MK3 on Linux, including:
+- Full hardware support (pads, buttons, encoder, slider, LEDs, screen)
+- Advanced DAW integration with Bitwig Studio
+- Performance features like Note Repeat and Fixed Velocity
+- Multiple operational modes (Play, Step Sequencer, Clip Launcher, Mixer)
+
+The driver works at the HID level without requiring Native Instruments' proprietary software, making it a truly open-source alternative that works natively on Linux.
 
 Contributions are welcome!
